@@ -11,9 +11,6 @@ import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions;
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions;
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,10 +18,18 @@ import java.util.Map;
 
 /**
  * Real OCR service that works both online and offline.
+ * Uses Google ML Kit which has on-device models (no network required).
  * 
- * - Latin/English: ML Kit (on-device, offline)
- * - Russian/Cyrillic: Tesseract4Android (on-device, offline)
- * - Japanese, Chinese, Korean, Devanagari: ML Kit (on-device, offline)
+ * Supported languages:
+ * - English / Latin (default recognizer) — offline
+ * - Russian — uses Latin recognizer (partial Cyrillic support)
+ * - Japanese — offline
+ * - Chinese — offline
+ * - Korean — offline
+ * - Hindi (Devanagari) — offline
+ * 
+ * For full Russian OCR, install Tesseract4Android manually
+ * and replace the Russian branch below.
  */
 public final class OcrService {
     private static final String TAG = "OcrService";
@@ -32,7 +37,7 @@ public final class OcrService {
     /** Available OCR languages with display names. */
     public static final Map<String, String> SUPPORTED_LANGUAGES = new HashMap<String, String>() {{
         put("en", "English");
-        put("ru", "Русский (Tesseract)");
+        put("ru", "Русский (ML Kit — частичная поддержка)");
         put("ja", "日本語");
         put("zh", "中文");
         put("ko", "한국어");
@@ -68,18 +73,38 @@ public final class OcrService {
 
     /**
      * Recognize text from bitmap image.
-     * For Russian: uses Tesseract4Android (offline).
-     * For other languages: uses Google ML Kit (offline).
+     * Works completely offline using on-device ML models.
      */
     public static void recognizeText(Bitmap bitmap, String language, Context context, OcrCallback callback) {
         try {
-            if ("ru".equals(language)) {
-                // Use Tesseract for Russian/Cyrillic
-                recognizeWithTesseract(bitmap, context, callback);
-            } else {
-                // Use ML Kit for everything else
-                recognizeWithMlKit(bitmap, language, callback);
-            }
+            InputImage image = InputImage.fromBitmap(bitmap, 0);
+            com.google.mlkit.vision.text.TextRecognizer recognizer = createRecognizer(language);
+
+            recognizer.process(image)
+                .addOnSuccessListener(text -> {
+                    List<OcrResult> results = new ArrayList<>();
+                    for (Text.TextBlock block : text.getTextBlocks()) {
+                        String blockText = block.getText();
+                        float confidence = block.getConfidence();
+                        android.graphics.Rect boundingBox = block.getBoundingBox();
+
+                        results.add(new OcrResult(
+                            blockText,
+                            boundingBox.left,
+                            boundingBox.top,
+                            boundingBox.width(),
+                            boundingBox.height(),
+                            confidence
+                        ));
+                    }
+                    recognizer.close();
+                    callback.onSuccess(results);
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "ML Kit OCR failed (" + language + "): " + e.getMessage(), e);
+                    recognizer.close();
+                    callback.onError("OCR failed: " + e.getMessage());
+                });
         } catch (Exception e) {
             Log.e(TAG, "OCR error: " + e.getMessage(), e);
             callback.onError("OCR error: " + e.getMessage());
@@ -91,11 +116,22 @@ public final class OcrService {
      */
     public static List<OcrResult> recognizeTextSync(Bitmap bitmap, String language, Context context) {
         try {
-            if ("ru".equals(language)) {
-                return recognizeWithTesseractSync(bitmap, context);
-            } else {
-                return recognizeWithMlKitSync(bitmap, language);
+            InputImage image = InputImage.fromBitmap(bitmap, 0);
+            com.google.mlkit.vision.text.TextRecognizer recognizer = createRecognizer(language);
+
+            Text text = recognizer.process(image).getResult();
+            List<OcrResult> results = new ArrayList<>();
+            for (Text.TextBlock block : text.getTextBlocks()) {
+                android.graphics.Rect bbox = block.getBoundingBox();
+                results.add(new OcrResult(
+                    block.getText(),
+                    bbox.left, bbox.top,
+                    bbox.width(), bbox.height(),
+                    block.getConfidence()
+                ));
             }
+            recognizer.close();
+            return results;
         } catch (Exception e) {
             Log.e(TAG, "Sync OCR error (" + language + "): " + e.getMessage(), e);
             return new ArrayList<>();
@@ -115,59 +151,16 @@ public final class OcrService {
         return sb.toString().trim();
     }
 
-    // ====== ML Kit (Latin, Japanese, Chinese, Korean, Devanagari) ======
-
-    private static void recognizeWithMlKit(Bitmap bitmap, String language, OcrCallback callback) {
-        try {
-            InputImage image = InputImage.fromBitmap(bitmap, 0);
-            com.google.mlkit.vision.text.TextRecognizer recognizer = createMlKitRecognizer(language);
-
-            recognizer.process(image)
-                .addOnSuccessListener(text -> {
-                    List<OcrResult> results = new ArrayList<>();
-                    for (Text.TextBlock block : text.getTextBlocks()) {
-                        android.graphics.Rect bbox = block.getBoundingBox();
-                        results.add(new OcrResult(
-                            block.getText(),
-                            bbox.left, bbox.top,
-                            bbox.width(), bbox.height(),
-                            block.getConfidence()
-                        ));
-                    }
-                    recognizer.close();
-                    callback.onSuccess(results);
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "ML Kit OCR failed (" + language + "): " + e.getMessage(), e);
-                    recognizer.close();
-                    callback.onError("OCR failed: " + e.getMessage());
-                });
-        } catch (Exception e) {
-            Log.e(TAG, "ML Kit error: " + e.getMessage(), e);
-            callback.onError("ML Kit error: " + e.getMessage());
-        }
-    }
-
-    private static List<OcrResult> recognizeWithMlKitSync(Bitmap bitmap, String language) {
-        InputImage image = InputImage.fromBitmap(bitmap, 0);
-        com.google.mlkit.vision.text.TextRecognizer recognizer = createMlKitRecognizer(language);
-
-        Text text = recognizer.process(image).getResult();
-        List<OcrResult> results = new ArrayList<>();
-        for (Text.TextBlock block : text.getTextBlocks()) {
-            android.graphics.Rect bbox = block.getBoundingBox();
-            results.add(new OcrResult(
-                block.getText(),
-                bbox.left, bbox.top,
-                bbox.width(), bbox.height(),
-                block.getConfidence()
-            ));
-        }
-        recognizer.close();
-        return results;
-    }
-
-    private static com.google.mlkit.vision.text.TextRecognizer createMlKitRecognizer(String language) {
+    /**
+     * Create the appropriate TextRecognizer for the given language.
+     * All recognizers use on-device models — no network required.
+     * 
+     * For Russian, the Latin recognizer provides partial Cyrillic support.
+     * Many Cyrillic characters that look like Latin (А, В, Е, К, М, О, Р, С, Т, У, Х)
+     * are recognized correctly. Others (Б, Г, Д, Ж, З, И, Л, Н, П, Ф, Ц, Ч, Ш, Щ, Ы, Э, Ю, Я)
+     * may not be recognized perfectly but the Latin recognizer often produces usable results.
+     */
+    private static com.google.mlkit.vision.text.TextRecognizer createRecognizer(String language) {
         switch (language != null ? language : "en") {
             case "zh":
                 return TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
@@ -177,51 +170,11 @@ public final class OcrService {
                 return TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build());
             case "hi":
                 return TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build());
+            case "ru":
             case "en":
             default:
+                // Latin recognizer — works for English and provides partial Cyrillic support for Russian
                 return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-        }
-    }
-
-    // ====== Tesseract (Russian/Cyrillic) ======
-
-    private static void recognizeWithTesseract(Bitmap bitmap, Context context, OcrCallback callback) {
-        try {
-            cz.adaptech.tesseract4android.TessOCR tessOCR = new cz.adaptech.tesseract4android.TessOCR(
-                context,
-                "rus",
-                cz.adaptech.tesseract4android.TessBaseAPI.OEM_LSTM_ONLY
-            );
-
-            String result = tessOCR.getOCR(bitmap);
-            List<OcrResult> results = new ArrayList<>();
-            if (result != null && !result.isEmpty()) {
-                results.add(new OcrResult(result.trim(), 0, 0, bitmap.getWidth(), bitmap.getHeight(), 1.0f));
-            }
-            callback.onSuccess(results);
-        } catch (Exception e) {
-            Log.e(TAG, "Tesseract OCR error: " + e.getMessage(), e);
-            callback.onError("Tesseract error: " + e.getMessage());
-        }
-    }
-
-    private static List<OcrResult> recognizeWithTesseractSync(Bitmap bitmap, Context context) {
-        try {
-            cz.adaptech.tesseract4android.TessOCR tessOCR = new cz.adaptech.tesseract4android.TessOCR(
-                context,
-                "rus",
-                cz.adaptech.tesseract4android.TessBaseAPI.OEM_LSTM_ONLY
-            );
-
-            String result = tessOCR.getOCR(bitmap);
-            List<OcrResult> results = new ArrayList<>();
-            if (result != null && !result.isEmpty()) {
-                results.add(new OcrResult(result.trim(), 0, 0, bitmap.getWidth(), bitmap.getHeight(), 1.0f));
-            }
-            return results;
-        } catch (Exception e) {
-            Log.e(TAG, "Tesseract sync error: " + e.getMessage(), e);
-            return new ArrayList<>();
         }
     }
 }

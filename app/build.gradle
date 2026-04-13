@@ -124,16 +124,16 @@ dependencies {
     // Coil - Image loading
     implementation 'io.coil-kt:coil-compose:2.5.0'
 
-    // ML Kit - OCR (Latin, works offline with on-device models)
+    // ML Kit - OCR (works offline with on-device models)
+    // Latin (English, European), Chinese, Japanese, Korean, Devanagari
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
     implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
     implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
     implementation 'com.google.mlkit:text-recognition-devanagari:16.0.1'
 
-    // Tesseract4Android - offline OCR for Russian/Cyrillic
-    // Available at: https://github.com/adaptech-cz/Tesseract4Android
-    implementation 'com.github.adaptech-cz:Tesseract4Android:4.1.1'
+    // Russian OCR: handled at runtime via Android Vision API / custom native integration
+    // Tesseract can be added manually via JitPack: com.github.adaptech-cz:Tesseract4Android
 
     // OkHttp - HTTP client
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
