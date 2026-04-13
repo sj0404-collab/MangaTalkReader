@@ -7,23 +7,41 @@ import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import com.google.mlkit.vision.text.cyrillic.CyrillicTextRecognizerOptions;
 import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions;
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions;
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.Map;
 
 /**
  * Real OCR service that works both online and offline.
  * Uses Google ML Kit which has on-device models (no network required).
- * Falls back to Tesseract if ML Kit fails.
+ * 
+ * Supported languages:
+ * - English (Latin script) — offline
+ * - Russian (Cyrillic) — offline
+ * - Japanese — offline
+ * - Chinese (Simplified & Traditional) — offline
+ * - Korean — offline
+ * - Hindi (Devanagari) — offline
  */
 public final class OcrService {
     private static final String TAG = "OcrService";
-    
+
+    /** Available OCR languages with display names. */
+    public static final Map<String, String> SUPPORTED_LANGUAGES = new HashMap<String, String>() {{
+        put("en", "English");
+        put("ru", "Русский");
+        put("ja", "日本語");
+        put("zh", "中文");
+        put("ko", "한국어");
+        put("hi", "हिन्दी");
+    }};
+
     public interface OcrCallback {
         void onSuccess(List<OcrResult> results);
         void onError(String error);
@@ -58,25 +76,7 @@ public final class OcrService {
     public static void recognizeText(Bitmap bitmap, String language, Context context, OcrCallback callback) {
         try {
             InputImage image = InputImage.fromBitmap(bitmap, 0);
-            com.google.mlkit.vision.text.TextRecognizer recognizer;
-            
-            switch (language) {
-                case "zh":
-                    recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
-                    break;
-                case "ja":
-                    recognizer = TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());
-                    break;
-                case "ko":
-                    recognizer = TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build());
-                    break;
-                case "hi":
-                    recognizer = TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build());
-                    break;
-                default:
-                    recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-                    break;
-            }
+            com.google.mlkit.vision.text.TextRecognizer recognizer = createRecognizer(language);
 
             recognizer.process(image)
                 .addOnSuccessListener(text -> {
@@ -85,7 +85,7 @@ public final class OcrService {
                         String blockText = block.getText();
                         float confidence = block.getConfidence();
                         android.graphics.Rect boundingBox = block.getBoundingBox();
-                        
+
                         results.add(new OcrResult(
                             blockText,
                             boundingBox.left,
@@ -99,7 +99,7 @@ public final class OcrService {
                     callback.onSuccess(results);
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "ML Kit OCR failed: " + e.getMessage(), e);
+                    Log.e(TAG, "ML Kit OCR failed (" + language + "): " + e.getMessage(), e);
                     recognizer.close();
                     callback.onError("OCR failed: " + e.getMessage());
                 });
@@ -115,22 +115,7 @@ public final class OcrService {
     public static List<OcrResult> recognizeTextSync(Bitmap bitmap, String language) {
         try {
             InputImage image = InputImage.fromBitmap(bitmap, 0);
-            com.google.mlkit.vision.text.TextRecognizer recognizer;
-            
-            switch (language) {
-                case "zh":
-                    recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
-                    break;
-                case "ja":
-                    recognizer = TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());
-                    break;
-                case "ko":
-                    recognizer = TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build());
-                    break;
-                default:
-                    recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-                    break;
-            }
+            com.google.mlkit.vision.text.TextRecognizer recognizer = createRecognizer(language);
 
             Text text = recognizer.process(image).getResult();
             List<OcrResult> results = new ArrayList<>();
@@ -146,7 +131,7 @@ public final class OcrService {
             recognizer.close();
             return results;
         } catch (Exception e) {
-            Log.e(TAG, "Sync OCR error: " + e.getMessage(), e);
+            Log.e(TAG, "Sync OCR error (" + language + "): " + e.getMessage(), e);
             return new ArrayList<>();
         }
     }
@@ -158,8 +143,33 @@ public final class OcrService {
         List<OcrResult> results = recognizeTextSync(bitmap, language);
         StringBuilder sb = new StringBuilder();
         for (OcrResult result : results) {
-            sb.append(result.getText()).append("\n");
+            if (!sb.isEmpty()) sb.append("\n");
+            sb.append(result.getText());
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * Create the appropriate TextRecognizer for the given language.
+     * All recognizers use on-device models — no network required.
+     */
+    private static com.google.mlkit.vision.text.TextRecognizer createRecognizer(String language) {
+        switch (language != null ? language : "en") {
+            case "ru":
+                // Cyrillic: русский, украинский, белорусский и др.
+                return TextRecognition.getClient(new CyrillicTextRecognizerOptions.Builder().build());
+            case "zh":
+                return TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
+            case "ja":
+                return TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());
+            case "ko":
+                return TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build());
+            case "hi":
+                return TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build());
+            case "en":
+            default:
+                // Latin: English, German, French, Spanish, etc.
+                return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        }
     }
 }
