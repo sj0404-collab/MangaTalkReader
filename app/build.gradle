@@ -131,8 +131,9 @@ dependencies {
     implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
     implementation 'com.google.mlkit:text-recognition-devanagari:16.0.1'
 
-    // Tesseract4Android - offline OCR for Russian/Cyrillic and other languages
-    implementation 'cz.adaptech:tesseract4android:4.1.1'
+    // Tesseract4Android - offline OCR for Russian/Cyrillic
+    // Available at: https://github.com/adaptech-cz/Tesseract4Android
+    implementation 'com.github.adaptech-cz:Tesseract4Android:4.1.1'
 
     // OkHttp - HTTP client
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
