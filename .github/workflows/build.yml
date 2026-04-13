@@ -1,0 +1,100 @@
+name: Build MangaTalkReader APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+    
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: MangaTalkReader-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+
+  release:
+    name: Build Signed Release APK
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Create keystore from secrets
+      run: |
+        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
+    
+    - name: Build Signed Release APK
+      run: ./gradlew assembleRelease
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    
+    - name: Get version info
+      id: version
+      run: |
+        VERSION=$(grep 'versionName' app/build.gradle | head -1 | cut -d'"' -f2)
+        echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+        echo "build_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
+    
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: MangaTalkReader-release
+        path: app/build/outputs/apk/release/app-release.apk
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}
+        name: MangaTalkReader ${{ steps.version.outputs.version }} (Build ${{ steps.version.outputs.build_number }})
+        body: |
+          ## Auto-build ${{ steps.version.outputs.version }} (Build ${{ steps.version.outputs.build_number }})
+          
+          ### Changes:
+          ${{ github.event.head_commit.message }}
+          
+          ### Installation:
+          - Download the APK
+          - Install on your Android device (enable "Install unknown apps")
+          - Updates will auto-install with the same signature
+        files: app/build/outputs/apk/release/app-release.apk
+        token: ${{ secrets.GITHUB_TOKEN }}
+        draft: false
+        prerelease: false
