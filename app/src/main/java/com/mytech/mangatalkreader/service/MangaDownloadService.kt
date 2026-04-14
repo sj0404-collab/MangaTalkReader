@@ -162,7 +162,7 @@ class MangaDownloadService @Inject constructor(
         downloadChapter(chapterUrl, chapterTitle, chapterId).collect { progress ->
             when (progress) {
                 is DownloadProgress.Completed -> finalUri = progress.uri
-                is DownloadProgress.Failed -> exception = progress.error
+                is DownloadProgress.Failed -> exception = progress.error as Exception
                 else -> Unit
             }
         }
@@ -179,8 +179,8 @@ class MangaDownloadService @Inject constructor(
     suspend fun deleteDownloadedChapter(chapterId: Long): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val chapter = chapterDao.getChapterById(chapterId)
-                ?: return@withContext Result.failure<FileNotFoundException>(
-                    FileNotFoundException("Chapter $chapterId not found in database")
+                ?: return@withContext Result.failure<Unit>(
+                    Exception("Chapter $chapterId not found in database")
                 )
 
             chapter.downloadPath?.let { path ->
