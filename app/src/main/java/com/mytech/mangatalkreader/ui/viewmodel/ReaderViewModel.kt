@@ -28,8 +28,8 @@ class ReaderViewModel @Inject constructor(
 
     fun loadChapter(chapterId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            chapterDao.getChapterById(chapterId).collect { chapter ->
-                _chapter.value = chapter
+            chapterDao.getChapterById(chapterId).collect { ch ->
+                _chapter.value = ch
             }
         }
     }
@@ -41,25 +41,9 @@ class ReaderViewModel @Inject constructor(
     fun saveProgress(pageIndex: Int) {
         _currentPage.value = pageIndex
         viewModelScope.launch(Dispatchers.IO) {
-            val ch = _chapter.value
-            if (ch != null) {
+            _chapter.value?.let { ch ->
                 chapterDao.updateProgress(ch.id, pageIndex)
             }
-        }
-    }
-
-    @dagger.hilt.android.lifecycle.HiltViewModel
-    class Factory @Inject constructor(
-        private val chapterDao: ChapterDao
-    ) : androidx.lifecycle.ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ReaderViewModel(chapterDao) as T
-        }
-
-        fun create(chapterId: Long): ReaderViewModel {
-            val vm = ReaderViewModel(chapterDao)
-            vm.loadChapter(chapterId)
-            return vm
         }
     }
 }

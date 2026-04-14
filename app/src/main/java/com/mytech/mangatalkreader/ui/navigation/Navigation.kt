@@ -1,19 +1,21 @@
 package com.mytech.mangatalkreader.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.mytech.mangatalkreader.ui.screens.library.LibraryScreen
-import com.mytech.mangatalkreader.ui.screens.search.SearchScreen
-import com.mytech.mangatalkreader.ui.screens.sources.SourcesScreen
-import com.mytech.mangatalkreader.ui.screens.settings.SettingsScreen
-import com.mytech.mangatalkreader.ui.screens.reader.ReaderScreen
 import com.mytech.mangatalkreader.ui.screens.manga_details.MangaDetailsScreen
+import com.mytech.mangatalkreader.ui.screens.reader.ReaderScreen
+import com.mytech.mangatalkreader.ui.screens.search.SearchScreen
+import com.mytech.mangatalkreader.ui.screens.settings.SettingsScreen
+import com.mytech.mangatalkreader.ui.screens.sources.SourcesScreen
 import com.mytech.mangatalkreader.ui.viewmodel.ReaderViewModel
 
 @Composable
@@ -79,9 +81,8 @@ fun AppNavHost(
             arguments = listOf(navArgument("chapterId") { type = NavType.LongType })
         ) { backStackEntry ->
             val chapterId = backStackEntry.arguments?.getLong("chapterId") ?: 0L
-            val viewModel = hiltViewModel<ReaderViewModel, ReaderViewModel.Factory>(
-                creationCallback = { factory -> factory.create(chapterId) }
-            )
+            val viewModel = hiltViewModel<ReaderViewModel>()
+            viewModel.loadChapter(chapterId)
             ReaderScreen(
                 viewModel = viewModel,
                 onNavigateBack = {
